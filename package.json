@@ -1,0 +1,16 @@
+{
+  "name": "daily-ui-notion-sync",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "@notionhq/client": "^0.1.9",
+    "dom-parser": "^0.1.6",
+    "emoji-strip": "^1.0.1",
+    "express": "^4.17.1",
+    "googleapis": "^39.2.0",
+    "jsdom": "^16.2.2",
+    "whatwg-url": "^9.0.0"
+  }
+}
