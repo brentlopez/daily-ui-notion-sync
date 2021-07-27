@@ -11,6 +11,7 @@
     "express": "^4.17.1",
     "googleapis": "^39.2.0",
     "jsdom": "^16.2.2",
+    "readline-promise": "^1.0.5",
     "whatwg-url": "^9.0.0"
   }
 }

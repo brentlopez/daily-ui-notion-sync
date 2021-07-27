@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import * as readline from 'readline';
+import readline from 'readline-promise';
 //import { gmail } from "googleapis/build/src/apis/gmail";
 import { google } from 'googleapis';
 const OAuth2Client = google.auth.OAuth2;
@@ -14,12 +14,12 @@ const TOKEN_PATH = 'token.json';
 
 export async function init() {
     // Load client secrets from a local file.
-    let content = await fs.promises.readFile('credentials.json')
+    let content = await fs.promises.readFile('credentials.json', 'ascii')
 
-    if(content.error){
-        console.log('Error loading client secret file:', err);
-        return;
-    }
+    // if(content.error){
+    //     console.log('Error loading client secret file:', err);
+    //     return;
+    // }
 
     let auth = await authorize(JSON.parse(content));
     return google.gmail({ version: 'v1', auth });
@@ -36,16 +36,18 @@ async function authorize(credentials) {
         client_id, client_secret, redirect_uris[0]);
 
     // Check if we have previously stored a token.
-    let token = await fs.promises.readFile(TOKEN_PATH);
-
-    if(token.error){
-        await getNewToken(oAuth2Client);
-        return;
-    }
-
-    oAuth2Client.setCredentials(JSON.parse(token));
-
-    return oAuth2Client;
+    return await fs.promises.readFile(TOKEN_PATH, 'ascii')
+        .then(t => {
+            oAuth2Client.setCredentials(JSON.parse(t));
+            return oAuth2Client;
+        })
+        .catch(async err => {
+            await getNewToken(oAuth2Client);
+            return oAuth2Client;
+        })
+        .then(() => {
+            return oAuth2Client;
+        });
 }
 
 /**
@@ -59,22 +61,24 @@ async function getNewToken(oAuth2Client) {
         scope: SCOPES,
     });
     console.log('Authorize this app by visiting this url:', authUrl);
-    const rl = readline.createInterface({
+    const rl = readline.default.createInterface({
         input: process.stdin,
         output: process.stdout,
     });
-    rl.question('Enter the code from that page here: ', async (code) => {
-        rl.close();
-        await oAuth2Client.getToken(code)
-            .then(async token => {
-                oAuth2Client.setCredentials(token);
-                // Store the token to disk for later program executions
-                await fs.promises.writeFile(TOKEN_PATH, JSON.stringify(token))
-                    .then(() => {
-                        console.log('Token stored to', TOKEN_PATH);
-                    })
-                    .catch(console.error);
-            })
-            .catch(err => console.error('Error retrieving access token', err));
-    });
+
+    let code = await rl.questionAsync('Enter the code from that page here: ')
+    
+    rl.close();
+    let tok = await oAuth2Client.getToken(code)
+        .catch(err => console.error('Error retrieving access token', err));
+
+    tok = tok["tokens"];
+
+    oAuth2Client.setCredentials(tok);
+    // Store the token to disk for later program executions
+    return await fs.promises.writeFile(TOKEN_PATH, JSON.stringify(tok))
+        .then(() => {
+            console.log('Token stored to', TOKEN_PATH);
+        })
+        .catch(console.error);
 }
