@@ -1,14 +1,14 @@
-import { init } from './gmail-plugin.js';
+import initGmail from './gmail-plugin.js';
 import * as jsdom from 'jsdom';
 import { gmail_v1 } from 'googleapis';
 import * as fs from 'fs';
 
-
 const { JSDOM } = jsdom;
-var mess = [];
 
-export async function run(callback) {
-  await getDailyUiMessages(await init(), callback);
+let mess = [];
+
+export default async function run() {
+  return getDailyUiMessages(await initGmail());
 }
 
 /**
@@ -16,56 +16,50 @@ export async function run(callback) {
  *
  * @param {gmail_v1} gmail An authorized OAuth2 client.
  */
-async function getDailyUiMessages(gmail, callback) {
+async function getDailyUiMessages(gmail) {
   mess = await getCachedMessages();
-  if (mess.length > 0) {
-    callback(Array.from(mess, getGalleryDataFromMessage))
-    return;
-  }
+  if (mess.length > 0) return mess;
 
-  var messageList = await gmail.users.messages.list({
+  const messageList = await gmail.users.messages.list({
     userId: 'me',
     q: 'subject:("Daily UI ::") from:hello@dailyui.co'
   })
     .catch(err => console.log('The API returned an error: ' + err));
 
-  if(!messageList) return;
+  if (!messageList) return [];
 
   const messages = messageList.data.messages;
   if (messages.length) {
-    console.log('Messages:');
-
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
+
+      // Wait 50 ms to not hit rate limit
       await sleep(50);
-      var fullMessage = await gmail.users.messages.get(
+
+      const fullMessage = await gmail.users.messages.get(
         { userId: 'me', id: message.id }
       )
         .catch(err => console.log('The API returned an error: ' + err));
 
-      if(!fullMessage) return;
+      if (!fullMessage) continue;
 
 
-      var subj = getDailyUiNumber(fullMessage.data);
-      if ((subj === -1) && !(i == messages.length - 1)) return;
-
-      if (subj && subj.length > 0) {
-        mess.push(fullMessage.data);
-      }
+      const subj = getDailyUiNumber(fullMessage.data);
+      if ((subj === -1) && !(i == messages.length - 1)) continue;
+      if (subj && subj.length > 0) mess.push(fullMessage.data)
 
       if (i == messages.length - 1) {
         mess = mess.sort((a, b) => {
           return parseInt(getDailyUiNumber(a)) - parseInt(getDailyUiNumber(b));
         });
 
-        //mess.forEach(m => console.log(getGalleryDataFromMessage(m)));  
-        const gallery = Array.from(mess, getGalleryDataFromMessage);
-        cacheMessages(gallery);
-        callback(gallery)
+        const gallery = mess.map(getGalleryDataFromMessage);
+        return cacheMessages(gallery);
       }
     }
   } else {
     console.log('No messages found.');
+    return [];
   }
 }
 
@@ -83,63 +77,43 @@ function getDailyUiNumber(message) {
 }
 
 function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getGalleryDataFromMessage(message) {
+  const ogMessages = readOgMessages(message)
+  if (ogMessages) return ogMessages;
+
   const body = message.payload;
+  const htmlBody = body.parts.find(p => p.mimeType === 'text/html').body.data;
+  const dom = new JSDOM(Buffer.from(htmlBody, 'base64'));
+  const document = dom.window.document;
+  const bodyEl = document.body;
 
-  var thing = readOgMessages(message)
-  if (thing) {
-    return thing;
-  } else {
-    var htmlBody = body.parts.find(p => p.mimeType === 'text/html').body.data;
+  const titleEl = bodyEl.querySelector('h1 span span:nth-of-type(2)');
+  const promptEl = bodyEl.querySelector('span > span > em');
 
-    var dom = new JSDOM(Buffer.from(htmlBody, 'base64'));
-
-    const document = dom.window.document;
-    const bodyEl = document.body;
-
-    const titleEl = bodyEl.querySelector('h1 span span:nth-of-type(2)');
-    const promptEl = bodyEl.querySelector('span > span > em');
-
-    return {
-      prommpt: promptEl?.innerHTML,
-      title: titleEl?.innerHTML,
-      number: getDailyUiNumber(message)
-    };
-  }
-
-
+  return {
+    prommpt: promptEl?.innerHTML,
+    title: titleEl?.innerHTML,
+    number: getDailyUiNumber(message)
+  };
 }
 
 function readOgMessages(message) {
-  if (parseInt(getDailyUiNumber(message)) === 51) {
-    console.log('');
-  }
   const body = message.payload;
-  var html = body.parts.find(p => p.mimeType === 'text/plain').body.data;
+  let html = body.parts.find(p => p.mimeType === 'text/plain').body.data;
   let buff = Buffer.from(html, 'base64');
-  html = buff.toString();
 
-  var lines = html.split(/(?:\r\n|\r|\n)/g);
+  const lines = buff.toString().split(/(?:\r\n|\r|\n)/g);
 
-  let readTitle = false;
-  let readPrompt = false;
-
-  let title;
-  let prompt;
+  let readTitle = false, readPrompt = false;
+  let title, prompt;
 
   for (let i = 0; i < lines.length; i++) {
+    if (title && prompt) break;
+
     const line = lines[i];
-
-
-    if (title && prompt) {
-      break;
-    }
-
     if (!line || line.length === 0) continue;
 
     if (readTitle) {
@@ -152,18 +126,11 @@ function readOgMessages(message) {
       prompt = line;
     }
 
-    if (line.includes('**')) {
-      readTitle = true;
-    }
-
-    if (line.includes("Design Hint")) {
-      readPrompt = true;
-    }
+    readTitle = line.includes('**');
+    readPrompt = line.includes("Design Hint");
   }
 
-  if (!title || !prompt) {
-    return null;
-  }
+  if (!title || !prompt) return null;
 
   return {
     prommpt: prompt,
@@ -172,17 +139,19 @@ function readOgMessages(message) {
   };
 }
 
-function cacheMessages(gallery) {
-  fs.promises.writeFile('.cache', JSON.stringify(gallery))
+async function cacheMessages(gallery) {
+  const json = JSON.stringify(gallery);
+  return await fs.promises.writeFile('.cache', json)
     .then(() => {
       console.log('Cached messages stored in .cache')
+      return json;
     });
 }
 
 async function getCachedMessages() {
-  return await fs.promises.readFile('.cache', 'ascii')
+  return fs.promises.readFile('.cache', 'ascii')
     .then(cache => {
-      console.log('Caching messages in .cache')
+      console.log('Loading messages from .cache')
       mess = JSON.parse(cache);
       return mess;
     })

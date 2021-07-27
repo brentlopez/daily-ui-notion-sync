@@ -12,7 +12,7 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 // time.
 const TOKEN_PATH = 'token.json';
 
-export async function init() {
+export default async function initGmail() {
     // Load client secrets from a local file.
     let content = await fs.promises.readFile('credentials.json', 'ascii')
 
@@ -36,7 +36,7 @@ async function authorize(credentials) {
         client_id, client_secret, redirect_uris[0]);
 
     // Check if we have previously stored a token.
-    return await fs.promises.readFile(TOKEN_PATH, 'ascii')
+    return fs.promises.readFile(TOKEN_PATH, 'ascii')
         .then(t => {
             oAuth2Client.setCredentials(JSON.parse(t));
             return oAuth2Client;
@@ -76,7 +76,7 @@ async function getNewToken(oAuth2Client) {
 
     oAuth2Client.setCredentials(tok);
     // Store the token to disk for later program executions
-    return await fs.promises.writeFile(TOKEN_PATH, JSON.stringify(tok))
+    return fs.promises.writeFile(TOKEN_PATH, JSON.stringify(tok))
         .then(() => {
             console.log('Token stored to', TOKEN_PATH);
         })
