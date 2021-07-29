@@ -94,7 +94,7 @@ function getGalleryDataFromMessage(message) {
   const promptEl = bodyEl.querySelector('span > span > em');
 
   return {
-    prommpt: promptEl?.innerHTML,
+    prompt: promptEl?.innerHTML,
     title: titleEl?.innerHTML,
     number: getDailyUiNumber(message)
   };
@@ -133,7 +133,7 @@ function readOgMessages(message) {
   if (!title || !prompt) return null;
 
   return {
-    prommpt: prompt,
+    prompt: prompt,
     title: title,
     number: getDailyUiNumber(message)
   };
